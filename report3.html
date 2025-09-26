@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>INT8 → (INT16) → ACC10 → INT8 Requantization Pipeline</title>
+
+<!-- MathJax for LaTeX equations -->
+<script>
+window.MathJax = {
+  tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]},
+  svg: {fontCache: 'global'}
+};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+<style>
+:root{
+  --bg: #ffffff; --fg:#111; --muted:#666; --card:#f8f8f8;
+  --accent:#2563eb; --accent2:#10b981; --line:#cfcfcf;
+}
+*{box-sizing:border-box}
+body{margin:0; font:16px/1.55 system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Noto Sans KR, sans-serif; background:var(--bg); color:var(--fg)}
+main{max-width:1100px; margin:40px auto; padding:0 20px 80px}
+h1{font-size:28px; margin:0 0 18px}
+h2{font-size:22px; margin:40px 0 12px}
+h3{font-size:18px; margin:28px 0 10px}
+p{margin:10px 0}
+small, .muted{color:var(--muted)}
+.card{background:var(--card); padding:16px; border-radius:14px; border:1px solid var(--line)}
+hr{border:none; border-top:1px solid var(--line); margin:28px 0}
+
+/* Pipeline diagram */
+.pipeline{display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:center; margin:14px 0 4px}
+.box{border:1.5px solid #222; border-radius:10px; padding:10px 12px; background:#fff; min-width:140px; text-align:center}
+.box .title{font-weight:700}
+.box .sub{font-size:12px; color:#555}
+.arrow{width:28px; height:2px; background:#222; position:relative}
+.arrow::after{content:""; position:absolute; right:-6px; top:-4px; border:6px solid transparent; border-left-color:#222}
+
+/* Notes right of node */
+.note{font-size:12.5px; color:#084; border-left:3px solid #84e1bc; padding-left:10px; margin:6px 0}
+
+/* Layer flow blocks */
+.flow{display:grid; grid-template-columns:repeat(4,1fr); gap:12px}
+.block{border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:#fff}
+.block .name{font-weight:700; color:#111}
+.block .desc{font-size:13px; color:#333}
+.block .meta{font-size:12px; color:#666}
+
+/* Code/mono */
+pre, code{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace}
+pre{background:#0b1020; color:#e6edf3; padding:14px; border-radius:10px; overflow:auto; border:1px solid #202840}
+
+/* Tables */
+.table{width:100%; border-collapse:collapse; font-size:14px}
+.table th, .table td{border:1px solid var(--line); padding:8px 10px; text-align:center}
+.table th{background:#f3f6ff; font-weight:700}
+.caption{font-size:13px; color:#555; margin-top:6px}
+
+/* Compact tip */
+.tip{background:#f6fff8; border:1px dashed #a3e3c2; padding:10px 12px; border-radius:10px}
+.kbd{display:inline-block; padding:2px 6px; font:12px/1 monospace; border:1px solid #bbb; border-bottom-width:2px; border-radius:6px; background:#f5f5f5}
+
+/* Responsive */
+@media (max-width:900px){
+  .flow{grid-template-columns:1fr 1fr}
+  .box{min-width:120px}
+}
+@media (max-width:560px){
+  .flow{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>정수 양자화 파이프라인 (INT8 → ACC10 → INT8)</h1>
+  <p class="muted">곱셈 후 고정 시프트 <b>S</b>로 10-bit 누산 도메인에 맞춘 뒤, 2-pass로 <b>amax</b> 기반 <b>rq</b>를 적용하여 출력 INT8을 헤드룸 <b>H</b>(≈120)에 맞춰 재양자화.</p>
+</header>
+
+<section class="card">
+  <h2>10초 요약</h2>
+  <div class="pipeline" aria-label="bitwidth pipeline">
+    <div class="box"><div class="title">INT8 × INT8</div><div class="sub">입력 x<sub>q</sub>, 가중치 w<sub>q</sub></div></div>
+    <div class="arrow" aria-hidden="true"></div>
+    <div class="box"><div class="title">INT16 곱 p</div><div class="sub">p = x<sub>q</sub> · w<sub>q</sub></div></div>
+    <div class="arrow"></div>
+    <div class="box"><div class="title">≫ S</div><div class="sub">고정 시프트</div></div>
+    <div class="arrow"></div>
+    <div class="box"><div class="title">10-bit clamp</div><div class="sub">[-512, 511]</div></div>
+    <div class="arrow"></div>
+    <div class="box"><div class="title">ACC(10b) 누산</div><div class="sub">sat-add, + b<sub>acc</sub></div></div>
+    <div class="arrow"></div>
+    <div class="box"><div class="title">1st: a<sub>max</sub></div><div class="sub">|a| 최댓값 관측</div></div>
+    <div class="arrow"></div>
+    <div class="box"><div class="title">rq = H / a<sub>max</sub></div><div class="sub">H≈120</div></div>
+    <div class="arrow"></div>
+    <div class="box"><div class="title">2nd: y<sub>q</sub>=round(a·rq)</div><div class="sub">INT8 출력</div></div>
+  </div>
+  <div class="note">스케일 관계: <b>s<sub>acc</sub> = s<sub>x</sub> · s<sub>w</sub> · 2<sup>S</sup></b>, &nbsp; <b>s<sub>y</sub> = s<sub>acc</sub> / rq</b></div>
+</section>
+
+<section>
+  <h2>핵심 수식</h2>
+  <div class="card">
+    <h3>도메인과 스케일</h3>
+    <p>입력·가중치·출력은 INT8, 누산은 10-bit 포화 가산:</p>
+    <p>$$x_q,w_q,y_q \in \{-128,\dots,127\}, \qquad a \in [-512, 511]$$</p>
+    <p>가중치 per-tensor 대칭 양자화: &nbsp; $$s_w=\frac{\max|W|}{127},\qquad s_x \text{ (이전 레이어 출력 스케일)}$$</p>
+    <h3>곱·시프트·누산</h3>
+    <p>$$p=x_q\cdot w_q \in \mathbb{Z}_{16},\quad \tilde{p}=p\gg S,\quad \hat{p}=\mathrm{clip}_{[-512,511]}(\tilde p)$$</p>
+    <p>$$a=\sum \hat{p} + b_{\mathrm{acc}},\qquad b_{\mathrm{acc}}=\mathrm{round}\!\Big(\frac{b_q\cdot s_b}{s_{\mathrm{acc}}}\Big),\ \ s_b=s_w$$</p>
+    <p class="tip"><b>누산 스케일:</b> $$\boxed{s_{\mathrm{acc}}=s_x\cdot s_w\cdot 2^{S}}$$</p>
+    <h3>2-pass Requantization</h3>
+    <p>1st pass: $$a_{\max}=\max|a|,\qquad \mathrm{rq}=\frac{H}{a_{\max}}\ \ (H\approx 120)$$</p>
+    <p>2nd pass: $$\boxed{y_q=\mathrm{clip}_{[-128,127]}\big(\mathrm{round}(a\cdot \mathrm{rq})\big)},\qquad \boxed{s_y=\frac{s_{\mathrm{acc}}}{\mathrm{rq}}}$$</p>
+  </div>
+</section>
+
+<section>
+  <h2>레이어 흐름(요약 블록)</h2>
+  <div class="flow">
+    <div class="block">
+      <div class="name">Conv k×k</div>
+      <div class="desc">INT8×INT8 → (≫S) → ACC10 → 2-pass rq → INT8</div>
+      <div class="meta">출력 스케일 s<sub>y</sub>가 다음 레이어 s<sub>x</sub></div>
+    </div>
+    <div class="block">
+      <div class="name">ReLU</div>
+      <div class="desc">INT8 inplace clamp</div>
+      <div class="meta">스케일 불변</div>
+    </div>
+    <div class="block">
+      <div class="name">MaxPool 2×2</div>
+      <div class="desc">채널별 최대 선택</div>
+      <div class="meta">스케일 불변</div>
+    </div>
+    <div class="block">
+      <div class="name">FC</div>
+      <div class="desc">Conv와 동일 스킴</div>
+      <div class="meta">2-pass rq → INT8</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>숫자 예시 (짧은 샘플)</h2>
+  <div class="card">
+    <p>가정: $s_x=\tfrac{1}{127}\approx0.007874$, &nbsp; $\max|W|=0.85 \Rightarrow s_w=\tfrac{0.85}{127}\approx0.006693$, &nbsp; $S=4$</p>
+    <p>누산 스케일: $s_{\mathrm{acc}}=s_x s_w 2^S \approx 8.455\times 10^{-5}$</p>
+    <p>1st pass에서 $a_{\max}=350$, $H=120 \Rightarrow \mathrm{rq}=120/350\approx0.342857$</p>
+    <p>출력 스케일: $s_y = s_{\mathrm{acc}}/\mathrm{rq} \approx 2.466\times 10^{-4}$ &nbsp; → &nbsp; $y_q=\mathrm{round}(a\cdot 0.342857)$</p>
+  </div>
+</section>
+
+<section>
+  <h2>ASCII 다이어그램 (텍스트 버전, 보고서 본문용)</h2>
+  <pre>
+INT8 x_q ──┐
+           │      (INT16)         (10-bit)              (INT8)
+INT8 w_q ──┼──▶  p = x_q*w_q ─▶  >> S  ─▶  clamp ─▶  Σ sat-add  ─▶ [1st: a_max]
+           │                                               │
+           └───────────────────────────────────────────────┘ (+ b_acc once)
+
+[2nd] rq = H / a_max
+[2nd] y_q = round(ACC * rq)  →  INT8 output,   s_y = s_acc / rq
+(next layer:  x_q ← y_q,  s_x ← s_y)
+  </pre>
+</section>
+
+<section>
+  <h2>참고 표 (필요 시)</h2>
+  <table class="table">
+    <thead>
+      <tr><th>기호</th><th>의미</th><th>비고</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>S</td><td>곱셈 후 고정 right-shift</td><td>포화 방지용 크기 조절</td></tr>
+      <tr><td>H</td><td>헤드룸</td><td>보통 100~127, 여기선 120</td></tr>
+      <tr><td>a<sub>max</sub></td><td>누산 결과의 절댓값 최댓값</td><td>1st pass에서 관측</td></tr>
+      <tr><td>rq</td><td>재양자화 스케일</td><td>$rq = H/a_{max}$</td></tr>
+      <tr><td>s<sub>acc</sub></td><td>누산 도메인 실수 스케일</td><td>$s_x\cdot s_w \cdot 2^S$</td></tr>
+      <tr><td>s<sub>y</sub></td><td>출력 실수 스케일</td><td>$s_{acc}/rq$</td></tr>
+    </tbody>
+  </table>
+  <div class="caption">기호/스케일 정의 정리.</div>
+</section>
+
+<section>
+  <h2>복붙 팁</h2>
+  <div class="card">
+    <p>보고서에 수식만 필요하면, 위 섹션의 LaTeX 줄들을 그대로 복사해서 사용하세요. 프레젠테이션엔 “10초 요약” 다이어그램만 캡처해도 충분합니다.</p>
+    <p class="muted">※ 오프라인 환경이라면 MathJax 없이 수식을 캡처 이미지로 대체하거나, LaTeX 문서로 내보내세요.</p>
+  </div>
+</section>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>양자화 연산 흐름 시각화 보고서</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- KaTeX (수식) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+
+  <!-- 폰트 -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --card:#f9fafb; --line:#e5e7eb; --muted:#6b7280;
+      --accent:#2563eb; --accent2:#7c3aed; --ok:#10b981; --warn:#f59e0b;
+    }
+    html,body{font-family:"Noto Sans KR",system-ui,Segoe UI,Roboto,Apple SD Gothic Neo,"Noto Sans KR",sans-serif}
+    .card{background:var(--card); border:1px solid var(--line); border-radius:14px}
+    .chip{display:inline-block; border:1px solid var(--line); border-radius:9999px; padding:.15rem .6rem; font-size:.8rem; color:#374151; background:#fff}
+    .diagram-box{background:#fff; border:1.5px solid #d1d5db; border-radius:12px; padding:.65rem .9rem; text-align:center; min-width:132px}
+    .diagram-sub{font-size:.72rem; color:var(--muted)}
+    .pill{border:1px solid #c7d2fe; background:#eef2ff; color:#3730a3}
+    .arrow{height:2px; width:48px}
+    .arrow svg{display:block}
+    .tag{font-size:.72rem; color:#374151}
+    .katex-display{margin:1rem 0 0.6rem}
+  </style>
+</head>
+<body class="bg-gray-100">
+  <main class="max-w-5xl mx-auto px-5 sm:px-6 lg:px-8 py-10">
+    <!-- Header -->
+    <header class="mb-8">
+      <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-900">양자화 연산 흐름 시각화 보고서</h1>
+      <p class="text-gray-500 mt-2">INT8 활성/가중치 → (곱) INT16 → (시프트·클램프) ACC10 → (2-pass) INT8 재양자화</p>
+    </header>
+
+    <!-- 용어 사전 -->
+    <section class="card p-5 sm:p-6 mb-8">
+      <h2 class="text-xl font-bold text-gray-800 mb-3">용어(Glossary)</h2>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <div class="font-semibold text-gray-900">양자화(Quantization)</div>
+          <p class="text-gray-600 text-sm mt-1">
+            실수 텐서를 정수로 표현하는 과정. 본 구현은 <span class="chip">INT8 대칭 per-tensor</span>를 사용하며
+            $$s_w=\frac{\max|W|}{127},\quad s_x\ \text{(이전 레이어 출력 스케일)}$$
+            로 스케일을 둔다.
+          </p>
+        </div>
+        <div>
+          <div class="font-semibold text-gray-900">재양자화(Requantization)</div>
+          <p class="text-gray-600 text-sm mt-1">
+            10-bit 누산 결과를 INT8 범위로 다시 스케일링하는 단계.
+            1-pass에서 $$a_{\max}=\max|a|$$를 관측하고, $$\mathrm{rq}=\frac{H}{a_{\max}}$$
+            로 정해 2-pass에서 $$y_q=\mathrm{round}(a\cdot \mathrm{rq})$$ 로 변환.
+          </p>
+        </div>
+        <div>
+          <div class="font-semibold text-gray-900">누산 도메인(ACC10)</div>
+          <p class="text-gray-600 text-sm mt-1">
+            곱 항을 시프트 후 포화가산하는 10-bit 정수 도메인.
+            누산 스케일은 $$\boxed{s_{\mathrm{acc}}=s_x\cdot s_w\cdot2^S}$$.
+            바이어스는 $$b_{\mathrm{acc}}=\mathrm{round}\!\big((b_q s_b)/s_{\mathrm{acc}}\big)$$ 로 1회 변환하여 더함.
+          </p>
+        </div>
+        <div>
+          <div class="font-semibold text-gray-900">헤드룸(H)</div>
+          <p class="text-gray-600 text-sm mt-1">
+            출력 INT8의 최대 절댓값 목표치. 본 구현은 <span class="chip">H ≈ 120</span>을 사용.
+            최종 출력 스케일은 $$\boxed{s_y=\frac{s_{\mathrm{acc}}}{\mathrm{rq}}}$$.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 메인 다이어그램 -->
+    <section class="mb-8">
+      <div class="flex items-baseline justify-between gap-3 mb-3">
+        <h2 class="text-xl font-bold text-gray-800">메인 다이어그램(단일 레이어 내부 데이터 경로)</h2>
+        <span class="tag">직선 화살표 · 단색 박스</span>
+      </div>
+
+      <div class="card p-5 overflow-x-auto">
+        <div class="min-w-[880px] flex items-center">
+          <!-- INT8 × INT8 -->
+          <div class="diagram-box">
+            <div class="font-bold">INT8 x<sub>q</sub></div>
+            <div class="diagram-sub">입력 활성</div>
+          </div>
+
+          <div class="arrow mx-2 sm:mx-3">
+            <svg viewBox="0 0 60 2" xmlns="http://www.w3.org/2000/svg">
+              <line x1="0" y1="1" x2="54" y2="1" stroke="#111" stroke-width="2"/>
+              <polygon points="60,1 54,-3 54,5" fill="#111"/>
+            </svg>
+          </div>
+
+          <div class="diagram-box">
+            <div class="font-bold">INT8 w<sub>q</sub></div>
+            <div class="diagram-sub">가중치</div>
+          </div>
+
+          <div class="arrow mx-2 sm:mx-3">
+            <svg viewBox="0 0 60 2" xmlns="http://www.w3.org/2000/svg">
+              <line x1="0" y1="1" x2="54" y2="1" stroke="#111" stroke-width="2"/>
+              <polygon points="60,1 54,-3 54,5" fill="#111"/>
+            </svg>
+          </div>
+
+          <!-- INT16 -->
+          <div class="diagram-box">
+            <div class="font-bold">INT16 p</div>
+            <div class="diagram-sub">p = x<sub>q</sub> · w<sub>q</sub></div>
+          </div>
+
+          <div class="arrow mx-2 sm:mx-3">
+            <svg viewBox="0 0 60 2" xmlns="http://www.w3.org/2000/svg">
+              <line x1="0" y1="1" x2="54" y2="1" stroke="#111" stroke-width="2"/>
+              <polygon points="60,1 54,-3 54,5" fill="#111"/>
+            </svg>
+          </div>
+
+          <!-- >> S -->
+          <div class="diagram-box">
+            <div class="font-bold">≫ S</div>
+            <div class="diagram-sub">고정 오른쪽 시프트</div>
+          </div>
+
+          <div class="arrow mx-2 sm:mx-3">
+            <svg viewBox="0 0 60 2" xmlns="http://www.w3.org/2000/svg">
+              <line x1="0" y1="1" x2="54" y2="1" stroke="#111" stroke-width="2"/>
+              <polygon points="60,1 54,-3 54,5" fill="#111"/>
+            </svg>
+          </div>
+
+          <!-- clamp 10-bit -->
+          <div class="diagram-box">
+            <div class="font-bold">10-bit clamp</div>
+            <div class="diagram-sub">[-512, 511]</div>
+          </div>
+
+          <div class="arrow mx-2 sm:mx-3">
+            <svg viewBox="0 0 60 2" xmlns="http://www.w3.org/2000/svg">
+              <line x1="0" y1="1" x2="54" y2="1" stroke="#111" stroke-width="2"/>
+              <polygon points="60,1 54,-3 54,5" fill="#111"/>
+            </svg>
+          </div>
+
+          <!-- ACC10 -->
+          <div class="diagram-box">
+            <div class="font-bold">ACC(10b) Σ</div>
+            <div class="diagram-sub">포화 가산 + b<sub>acc</sub></div>
+          </div>
+
+          <div class="arrow mx-2 sm:mx-3">
+            <svg viewBox="0 0 60 2" xmlns="http://www.w3.org/2000/svg">
+              <line x1="0" y1="1" x2="54" y2="1" stroke="#111" stroke-width="2"/>
+              <polygon points="60,1 54,-3 54,5" fill="#111"/>
+            </svg>
+          </div>
+
+          <!-- rq -->
+          <div class="diagram-box">
+            <div class="font-bold">rq = H / a<sub>max</sub></div>
+            <div class="diagram-sub">1-pass 측정 → 2-pass 적용</div>
+          </div>
+
+          <div class="arrow mx-2 sm:mx-3">
+            <svg viewBox="0 0 60 2" xmlns="http://www.w3.org/2000/svg">
+              <line x1="0" y1="1" x2="54" y2="1" stroke="#111" stroke-width="2"/>
+              <polygon points="60,1 54,-3 54,5" fill="#111"/>
+            </svg>
+          </div>
+
+          <!-- INT8 out -->
+          <div class="diagram-box">
+            <div class="font-bold">INT8 y<sub>q</sub></div>
+            <div class="diagram-sub">다음 레이어 입력</div>
+          </div>
+        </div>
+
+        <div class="mt-4 text-sm text-gray-600">
+          <span class="chip">s<sub>acc</sub> = s<sub>x</sub> · s<sub>w</sub> · 2<sup>S</sup></span>
+          <span class="chip ml-2">s<sub>y</sub> = s<sub>acc</sub> / rq</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 단계별 설명 + 수식 -->
+    <section class="grid lg:grid-cols-2 gap-6 mb-10">
+      <article class="card p-5">
+        <h3 class="text-lg font-bold text-gray-900">① 곱셈 (INT8×INT8 → INT16)</h3>
+        <p class="text-gray-600 mt-2">입력과 가중치를 곱해 16-bit 중간값을 만든다.</p>
+        <div class="mt-2">$$p=x_q\cdot w_q \in \mathbb{Z}_{16}$$</div>
+      </article>
+
+      <article class="card p-5">
+        <h3 class="text-lg font-bold text-gray-900">② 시프트·클램프 (INT16 → 10-bit)</h3>
+        <p class="text-gray-600 mt-2">고정 시프트 <span class="chip">S</span>로 항의 크기를 줄이고, 10-bit 범위로 자른다.</p>
+        <div class="mt-2">$$\tilde p = p \gg S,\qquad \hat p=\mathrm{clip}_{[-512,511]}(\tilde p)$$</div>
+      </article>
+
+      <article class="card p-5">
+        <h3 class="text-lg font-bold text-gray-900">③ 누산 (ACC10, 포화가산)</h3>
+        <p class="text-gray-600 mt-2">바이어스를 ACC 도메인으로 1회 변환해 더한다.</p>
+        <div class="mt-2">$$a=\sum \hat p + b_{\mathrm{acc}},\quad b_{\mathrm{acc}}=\mathrm{round}\!\Big(\frac{b_q s_b}{s_{\mathrm{acc}}}\Big)$$</div>
+        <div class="mt-1 text-sm text-gray-600">누산 스케일: $$\boxed{s_{\mathrm{acc}}=s_x s_w 2^S}$$</div>
+      </article>
+
+      <article class="card p-5">
+        <h3 class="text-lg font-bold text-gray-900">④ 2-pass 재양자화 (ACC10 → INT8)</h3>
+        <p class="text-gray-600 mt-2">1-pass에서 <span class="chip">a<sub>max</sub></span>를 관측해 헤드룸 <span class="chip">H≈120</span>에 맞춤.</p>
+        <div class="mt-2">$$\mathrm{rq}=\frac{H}{a_{\max}},\qquad y_q=\mathrm{clip}_{[-128,127]}(\mathrm{round}(a\cdot \mathrm{rq}))$$</div>
+        <div class="mt-1 text-sm text-gray-600">출력 스케일: $$\boxed{s_y=\frac{s_{\mathrm{acc}}}{\mathrm{rq}}}$$</div>
+      </article>
+    </section>
+
+    <!-- 숫자 예시 -->
+    <section class="card p-5 mb-10">
+      <h2 class="text-xl font-bold text-gray-900 mb-2">숫자 예시(요약)</h2>
+      <p class="text-gray-600">가정: \(s_x=\frac{1}{127}\approx0.007874\), \(\max|W|=0.85 \Rightarrow s_w=\frac{0.85}{127}\approx0.006693\), \(S=4\).</p>
+      <p class="text-gray-600 mt-1">누산 스케일: \(s_{\mathrm{acc}}=s_x s_w 2^S \approx 8.455\times10^{-5}\).</p>
+      <p class="text-gray-600 mt-1">1-pass: \(a_{\max}=350\), \(H=120 \Rightarrow \mathrm{rq}\approx0.342857\).</p>
+      <p class="text-gray-600 mt-1">출력 스케일: \(s_y = s_{\mathrm{acc}}/\mathrm{rq} \approx 2.466\times10^{-4}\).</p>
+    </section>
+
+    <!-- 한 줄 결론 -->
+    <section class="mb-16">
+      <div class="card p-5">
+        <p class="text-gray-800">
+          <span class="font-bold">한 줄 요약.</span>
+          고정 시프트 <span class="chip">S</span>는 누산 안전성을, 동적 <span class="chip">rq</span>는 출력 다이내믹 레인지 복원을 담당한다.
+          <span class="chip">s<sub>y</sub></span>는 다음 레이어의 <span class="chip">s<sub>x</sub></span>가 되어 스케일이 전파된다.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function(){
+      renderMathInElement(document.body, {
+        delimiters: [
+          {left: "$$", right: "$$", display: true},
+          {left: "\\(", right: "\\)", display: false},
+          {left: "\\[", right: "\\]", display: true}
+        ]
+      });
+    });
+  </script>
+</body>
+</html>
