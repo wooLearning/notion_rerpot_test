@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>양자화 기술 요약 보고서: 다이어그램 & 수식</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU07EWpWcLsR38TCIXrGP1E32feGcfMzkA5ciKrCF6BfoZrEsGDTe9R" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzYCACeUdcgtPQJXOXlhsbiaXvoMgpsQGAg" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" xintegrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .katex-display {
+            margin: 1.25em 0;
+            font-size: 1.2em;
+        }
+        .content-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            border: 1px solid #e5e7eb;
+            padding: 2rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        h2 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: #1f2937;
+            border-bottom: 2px solid #3b82f6;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #374151;
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .diagram-box {
+            border: 2px solid #e5e7eb;
+            background-color: #f9fafb;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            text-align: center;
+        }
+        .diagram-arrow {
+            font-size: 2rem;
+            color: #9ca3af;
+            align-self: center;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            border: 1px solid #d1d5db;
+            padding: 0.75rem;
+            text-align: left;
+        }
+        th {
+            background-color: #f9fafb;
+            font-weight: 600;
+        }
+        tr:nth-child(even) {
+            background-color: #f9fafb;
+        }
+    </style>
+</head>
+<body class="py-12 px-4">
+    <div class="max-w-5xl mx-auto">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-800">양자화 기술 요약 보고서</h1>
+            <p class="text-xl text-gray-500 mt-2">핵심 다이어그램 및 수식 모음</p>
+        </header>
+
+        <main class="space-y-12">
+            <!-- 섹션 1: 모델 아키텍처 및 제원 -->
+            <section class="content-card">
+                <h2>1. LeNet-5 모델 아키텍처 및 제원</h2>
+                <h3>모델 구조</h3>
+                <table>
+                    <thead>
+                        <tr><th>Layer</th><th>Filter / Dims</th><th>Output Shape</th><th>Activation</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Conv2D_0</td><td>5x5x1 &rarr; 6</td><td>28x28x6</td><td>ReLU</td></tr>
+                        <tr><td>Max Pool_0</td><td>2x2</td><td>14x14x6</td><td>-</td></tr>
+                        <tr><td>Conv2D_1</td><td>5x5x6 &rarr; 16</td><td>10x10x16</td><td>ReLU</td></tr>
+                        <tr><td>Max Pool_1</td><td>2x2</td><td>5x5x16</td><td>-</td></tr>
+                        <tr><td>Conv2D_2</td><td>5x5x16 &rarr; 120</td><td>1x1x120</td><td>ReLU</td></tr>
+                        <tr><td>Dense_0</td><td>120 &rarr; 84</td><td>84</td><td>ReLU</td></tr>
+                        <tr><td>Dense_1</td><td>84 &rarr; 10</td><td>10</td><td>Softmax</td></tr>
+                    </tbody>
+                </table>
+                <h3>연산량 (MACs) 및 파라미터 용량 (INT8)</h3>
+                <table>
+                    <thead>
+                        <tr><th>Layer</th><th>연산량 (MACs)</th><th>파라미터 용량 (Bytes)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Conv2D_0</td><td>117,600</td><td>156</td></tr>
+                        <tr><td>Conv2D_1</td><td>240,000</td><td>2,416</td></tr>
+                        <tr><td>Conv2D_2</td><td>48,000</td><td>48,120</td></tr>
+                        <tr><td>Dense_0</td><td>10,080</td><td>10,164</td></tr>
+                        <tr><td>Dense_1</td><td>840</td><td>850</td></tr>
+                        <tr><td><strong>Total</strong></td><td><strong>416,520</strong></td><td><strong>61,706 (약 60.26 KB)</strong></td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- 섹션 2: 핵심 다이어그램 -->
+            <section class="content-card">
+                <h2>2. 핵심 다이어그램</h2>
+                <h3>2.1. 전체 데이터 흐름</h3>
+                <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 mt-4 flex items-center justify-center space-x-2 md:space-x-4">
+                    <div class="diagram-box">Layer N-1</div>
+                    <div class="diagram-arrow text-center">&rarr;<div class="text-sm font-medium text-blue-600">INT8</div></div>
+                    <div class="diagram-box bg-blue-100 border-blue-300">Layer N</div>
+                    <div class="diagram-arrow text-center">&rarr;<div class="text-sm font-medium text-blue-600">INT8</div></div>
+                    <div class="diagram-box">Layer N+1</div>
+                </div>
+                
+                <h3 id="integrated-diagram">2.2. 단일 레이어 내 연산 흐름 통합 다이어그램</h3>
+                <div class="p-6 bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto mt-4">
+                    <div class="flex items-center space-x-4" style="min-width: 800px;">
+                        <div class="flex-shrink-0 text-center">
+                            <div class="diagram-box">INT8 <span class="text-gray-400">(입력)</span></div>
+                            <div class="text-2xl font-bold text-blue-500 my-2">&times;</div>
+                            <div class="diagram-box">INT8 <span class="text-gray-400">(가중치)</span></div>
+                        </div>
+                        <div class="diagram-arrow">&rarr;</div>
+                        <div class="flex-shrink-0 text-center">
+                            <div class="diagram-box bg-green-100 border-green-300">INT16</div>
+                        </div>
+                        <div class="diagram-arrow text-center">&rarr;<div class="text-xs text-red-500 font-semibold">Shift</div></div>
+                        <div class="flex-shrink-0 text-center">
+                            <div class="diagram-box bg-yellow-100 border-yellow-300">INT10</div>
+                        </div>
+                        <div class="diagram-arrow text-center">&rarr;<div class="text-xs text-blue-500 font-semibold">Accumulate</div></div>
+                        <div class="flex-shrink-0 text-center">
+                             <div class="diagram-box bg-purple-100 border-purple-300">INT10<div class="text-xs text-gray-400">(Accumulator)</div></div>
+                        </div>
+                        <div class="diagram-arrow text-center">&rarr;<div class="text-xs text-indigo-500 font-semibold">Requantize</div></div>
+                        <div class="flex-shrink-0 text-center">
+                            <div class="diagram-box bg-gray-200 border-gray-400">INT8<div class="text-xs text-gray-500">(최종 출력)</div></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- 섹션 3: 핵심 수식 모음 -->
+            <section class="content-card">
+                <h2>3. 핵심 수식 모음</h2>
+                <h3>3.1. 기본 연산 과정</h3>
+                <p><strong>Step 1: 곱셈 (INT8 &rarr; INT16)</strong></p>
+                $$ v_{16} = v_{in(int8)} \times v_{w(int8)} $$
+                <p><strong>Step 2: 스케일링 (INT16 &rarr; INT10)</strong></p>
+                $$ v_{10,scaled} = v_{16} \gg S $$
+                <p><strong>Step 3: 누산 (INT10)</strong></p>
+                $$ \text{Accumulator}_{(t)} = \text{saturate}_{10bit}(\text{Accumulator}_{(t-1)} + v_{10,scaled}) $$
+
+                <h3>3.2. 2-Pass 동적 Requantization (INT10 &rarr; INT8)</h3>
+                <p><strong>Pass 1: 절대 최댓값($a_{max}$) 탐색</strong></p>
+                $$ a_{max} = \max_{i \in \text{outputs}} | \text{Accumulator}_i.\text{val()} | $$
+                <p><strong>Pass 2: 스케일링 팩터($R_q$) 계산 및 출력 생성</strong></p>
+                $$ R_q = \frac{\text{HEADROOM}}{a_{max}} \quad (\text{HEADROOM} = 120.0) $$
+                $$ y_{int8} = \text{saturate}_{int8}(\text{round}(\text{Accumulator}_{final} \times R_q)) $$
+
+                <h3>3.3. 편향(Bias) 처리</h3>
+                <p>저장된 `INT8` 편향($b_{q8}$)을 누산기 스케일에 맞게 변환</p>
+                $$ \text{bias}_{acc} = \text{round} \left( \frac{b_{q8} \times s_b}{s_x \times s_w \times 2^S} \right) $$
+                <p class="text-sm text-gray-500 mt-2">
+                    ($s_b$: 편향 스케일, $s_x$: 입력 스케일, $s_w$: 가중치 스케일, $S$: 시프트 값)
+                </p>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            renderMathInElement(document.body, {
+                delimiters: [
+                    {left: "$$", right: "$$", display: true},
+                    {left: "$", right: "$", display: false}
+                ]
+            });
+        });
+    </script>
+</body>
+</html>

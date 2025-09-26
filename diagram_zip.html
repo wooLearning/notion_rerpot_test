@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>INT8 → ACC10 → INT8 | 다이어그램 & 수식 모음</title>
+
+<!-- Tailwind for quick layout -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- MathJax for LaTeX -->
+<script>
+  window.MathJax = { tex:{inlineMath:[['$','$'],['\\(','\\)']]}, svg:{fontCache:'global'} };
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+<style>
+  html,body{font-family:system-ui,-apple-system,"Noto Sans KR",Segoe UI,Roboto,Apple SD Gothic Neo,sans-serif}
+  :root{--line:#e2e8f0; --fg:#0f172a}
+  .card{background:#f8fafc;border:1px solid var(--line);border-radius:14px}
+  .box{background:#fff;border:1.6px solid #cbd5e1;border-radius:12px;padding:.6rem .9rem;min-width:140px;text-align:center}
+  .box .t{font-weight:800;color:var(--fg)}
+  .box .s{font-size:.72rem;color:#475569}
+  .arrow{height:2px;width:64px}
+  .arrow svg{display:block}
+  .chip{display:inline-block;padding:.18rem .55rem;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:.78rem;color:#334155}
+  .katex-display{margin:1rem 0 .6rem}
+</style>
+</head>
+<body class="bg-white text-slate-900">
+<main class="max-w-6xl mx-auto px-5 md:px-8 py-10">
+
+  <!-- Title -->
+  <header class="mb-8">
+    <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight">
+      INT8 → ACC10 → INT8 : 다이어그램 & 수식 모음
+    </h1>
+    <p class="text-slate-500 mt-2">병렬화 설명 없이, 보고서에 필요한 핵심 도식과 공식만 정리</p>
+  </header>
+
+  <!-- MAIN PIPELINE DIAGRAM -->
+  <section class="mb-8">
+    <h2 class="text-xl font-bold mb-3">① 메인 파이프라인 (단일 레이어 내부)</h2>
+    <div class="card p-5 overflow-x-auto">
+      <div class="min-w-[980px] flex items-center">
+        <div class="box"><div class="t">INT8 x<sub>q</sub></div><div class="s">입력</div></div>
+        <div class="arrow mx-2"><svg viewBox="0 0 70 2" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="1" x2="64" y2="1" stroke="#0f172a" stroke-width="2"/><polygon points="70,1 64,-3 64,5" fill="#0f172a"/></svg></div>
+        <div class="box"><div class="t">INT8 w<sub>q</sub></div><div class="s">가중치</div></div>
+        <div class="arrow mx-2"><svg viewBox="0 0 70 2" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="1" x2="64" y2="1" stroke="#0f172a" stroke-width="2"/><polygon points="70,1 64,-3 64,5" fill="#0f172a"/></svg></div>
+        <div class="box"><div class="t">INT16 p</div><div class="s">p = x<sub>q</sub>·w<sub>q</sub></div></div>
+        <div class="arrow mx-2"><svg viewBox="0 0 70 2" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="1" x2="64" y2="1" stroke="#0f172a" stroke-width="2"/><polygon points="70,1 64,-3 64,5" fill="#0f172a"/></svg></div>
+        <div class="box"><div class="t">≫ S</div><div class="s">고정 shift</div></div>
+        <div class="arrow mx-2"><svg viewBox="0 0 70 2" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="1" x2="64" y2="1" stroke="#0f172a" stroke-width="2"/><polygon points="70,1 64,-3 64,5" fill="#0f172a"/></svg></div>
+        <div class="box"><div class="t">10-bit clamp</div><div class="s">[-512, 511]</div></div>
+        <div class="arrow mx-2"><svg viewBox="0 0 70 2" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="1" x2="64" y2="1" stroke="#0f172a" stroke-width="2"/><polygon points="70,1 64,-3 64,5" fill="#0f172a"/></svg></div>
+        <div class="box"><div class="t">ACC(10b) Σ</div><div class="s">포화 누산 + b<sub>acc</sub></div></div>
+        <div class="arrow mx-2"><svg viewBox="0 0 70 2" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="1" x2="64" y2="1" stroke="#0f172a" stroke-width="2"/><polygon points="70,1 64,-3 64,5" fill="#0f172a"/></svg></div>
+        <div class="box"><div class="t">rq = H / a<sub>max</sub></div><div class="s">1st 측정 → 2nd 적용</div></div>
+        <div class="arrow mx-2"><svg viewBox="0 0 70 2" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="1" x2="64" y2="1" stroke="#0f172a" stroke-width="2"/><polygon points="70,1 64,-3 64,5" fill="#0f172a"/></svg></div>
+        <div class="box"><div class="t">INT8 y<sub>q</sub></div><div class="s">다음 레이어</div></div>
+      </div>
+      <div class="mt-4 space-x-2">
+        <span class="chip">s<sub>acc</sub> = s<sub>x</sub> · s<sub>w</sub> · 2<sup>S</sup></span>
+        <span class="chip">s<sub>y</sub> = s<sub>acc</sub> / rq</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FORMULAE PACK -->
+  <section class="grid lg:grid-cols-2 gap-6 mb-10">
+    <article class="card p-5">
+      <h3 class="font-bold text-lg">A. 양자화(Quantization)</h3>
+      <div class="mt-1">
+        $$ x_q,w_q,y_q \in \{-128,\dots,127\},\quad a\in[-512,511] $$
+        $$ s_w=\frac{\max|W|}{127},\qquad s_x\ \text{(이전 레이어 출력 스케일)} $$
+      </div>
+    </article>
+
+    <article class="card p-5">
+      <h3 class="font-bold text-lg">B. 곱·시프트·클램프</h3>
+      <div class="mt-1">
+        $$ p=x_q\cdot w_q \in \mathbb{Z}_{16},\qquad \tilde p=p\gg S, \qquad \hat p=\mathrm{clip}_{[-512,511]}(\tilde p) $$
+      </div>
+    </article>
+
+    <article class="card p-5">
+      <h3 class="font-bold text-lg">C. ACC10 누산 & Bias 정합</h3>
+      <div class="mt-1">
+        $$ a=\sum \hat p + b_{acc},\qquad \boxed{s_{acc}=s_x\cdot s_w \cdot 2^S} $$
+        $$ b_{acc}=\mathrm{round}\!\Big(\frac{b_q \cdot s_b}{s_{acc}}\Big), \quad s_b=s_w $$
+      </div>
+    </article>
+
+    <article class="card p-5">
+      <h3 class="font-bold text-lg">D. 2-pass 재양자화</h3>
+      <div class="mt-1">
+        $$ a_{\max}=\max|a|,\qquad rq=\frac{H}{a_{\max}} \ (H\approx120) $$
+        $$ \boxed{y_q=\mathrm{clip}_{[-128,127]}(\mathrm{round}(a\cdot rq))},\qquad \boxed{s_y=\dfrac{s_{acc}}{rq}} $$
+      </div>
+    </article>
+  </section>
+
+  <!-- OPTIONAL: PER-LAYER MACs & PARAM BYTES (formulas only) -->
+  <section class="card p-5 mb-10">
+    <h2 class="text-xl font-bold mb-2">② 레이어별 계산식(보고서 삽입용)</h2>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <h4 class="font-semibold">연산량(MACs)</h4>
+        <div class="mt-1">
+          $$ \text{Conv MACs} = H_{out} W_{out} C_{out} \, K_h K_w C_{in} $$
+          $$ \text{FC MACs} = \text{OUT}\times \text{IN} $$
+        </div>
+      </div>
+      <div>
+        <h4 class="font-semibold">파라미터 수/용량(INT8)</h4>
+        <div class="mt-1">
+          $$ \#W_{\text{conv}} = K_h K_w C_{in} C_{out},\quad \#B = C_{out} $$
+          $$ \text{Bytes} = (\#W+\#B)\times 1\text{B} $$
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NUMERIC EXAMPLE (compact) -->
+  <section class="card p-5 mb-12">
+    <h2 class="text-xl font-bold mb-2">③ 숫자 예시(콤팩트)</h2>
+    <p class="text-slate-700">
+      가정: \(s_x=\tfrac{1}{127}\approx0.007874\), \(\max|W|=0.85\Rightarrow s_w=\tfrac{0.85}{127}\approx0.006693\), \(S=4\).
+      $$ s_{acc}=s_x s_w 2^S \approx 8.455\times10^{-5} $$
+      1st-pass: \(a_{\max}=350,\ H=120 \Rightarrow rq\approx0.342857\).
+      $$ s_y=\frac{s_{acc}}{rq} \approx 2.466\times10^{-4},\qquad y_q=\mathrm{round}(a\cdot 0.342857) $$
+    </p>
+  </section>
+
+  <!-- LAYER FLOW MINI DIAGRAM -->
+  <section class="mb-4">
+    <h2 class="text-xl font-bold mb-3">④ 레이어 플로우 미니 다이어그램</h2>
+    <div class="card p-5">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="chip">Conv k×k</span>
+        <span class="chip">ReLU</span>
+        <span class="chip">MaxPool 2×2</span>
+        <span class="chip">Conv k×k</span>
+        <span class="chip">ReLU</span>
+        <span class="chip">MaxPool 2×2</span>
+        <span class="chip">Conv k×k</span>
+        <span class="chip">ReLU</span>
+        <span class="chip">Flatten</span>
+        <span class="chip">FC</span>
+        <span class="chip">ReLU</span>
+        <span class="chip">FC</span>
+        <span class="chip">Softmax</span>
+      </div>
+      <p class="text-slate-500 text-sm mt-3">각 Conv/FC 내부는 상단 메인 파이프라인(ACC10 + 2-pass rq)을 동일하게 사용.</p>
+    </div>
+  </section>
+
+  <footer class="text-slate-400 text-sm mt-8">
+    본 파일은 “다이어그램 & 수식”만 모은 버전입니다. 필요 시 텍스트 설명은 별도 섹션으로 추가하세요.
+  </footer>
+
+</main>
+</body>
+</html>

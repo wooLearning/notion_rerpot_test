@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>양자화 연산 흐름 시각화 보고서</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU07EWpWcLsR38TCIXrGP1E32feGcfMzkA5ciKrCF6BfoZrEsGDTe9R" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzYCACeUdcgtPQJXOXlhsbiaXvoMgpsQGAg" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" xintegrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+        .katex-display {
+            margin: 1em 0;
+            font-size: 1.2em;
+        }
+        .diagram-box {
+            border: 2px solid #e5e7eb; /* gray-200 */
+            background-color: #f9fafb; /* gray-50 */
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            text-align: center;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        .diagram-arrow {
+            font-size: 2rem;
+            color: #9ca3af; /* gray-400 */
+            align-self: center;
+        }
+        .op-symbol {
+            font-size: 2rem;
+            color: #3b82f6; /* blue-500 */
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.5rem;
+            height: 2.5rem;
+            border: 2px solid #d1d5db; /* gray-300 */
+            border-radius: 9999px;
+            background-color: white;
+        }
+        .step-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            border: 1px solid #e5e7eb;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 py-10 px-4">
+    <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-2xl p-8 md:p-12">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-800">양자화 연산 흐름 시각화 보고서</h1>
+            <p class="text-lg text-gray-500 mt-2">LeNet-5 모델의 단일 레이어 내 데이터 변환 과정 분석</p>
+        </header>
+
+        <main>
+            <!-- 섹션 1: 개요 -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-semibold text-gray-700 border-b-2 border-gray-200 pb-2 mb-4">1. 개요</h2>
+                <p class="text-gray-600 leading-relaxed">
+                    본 문서는 C++로 구현된 LeNet-5 모델의 단일 연산 레이어(합성곱 또는 완전 연결) 내부에서 일어나는 데이터의 변환 과정을 시각적으로 표현하고 설명합니다. 핵심은 <strong>`INT8`</strong> 데이터를 입력받아, 중간 연산 과정에서 정밀도를 보존하기 위해 <strong>`INT10`</strong> 누산기를 사용한 후, 다시 <strong>`INT8`</strong> 형태로 변환하여 다음 레이어로 전달하는 파이프라인입니다.
+                </p>
+            </section>
+
+            <!-- 섹션 2: 전체 데이터 흐름도 -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-semibold text-gray-700 border-b-2 border-gray-200 pb-2 mb-4">2. 전체 데이터 흐름도</h2>
+                <div class="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                    <p class="text-gray-600 leading-relaxed mb-6">
+                        각 연산 레이어는 독립적인 데이터 처리 단위를 형성하며, 모든 레이어는 동일한 입출력 데이터 타입을 갖습니다. 이를 통해 모델 전체에서 일관된 데이터 파이프라인이 유지됩니다.
+                    </p>
+                    <div class="flex items-center justify-center space-x-2 md:space-x-4">
+                        <div class="diagram-box">Layer N-1</div>
+                        <div class="diagram-arrow text-center">
+                            &rarr;
+                            <div class="text-sm font-medium text-blue-600">INT8</div>
+                        </div>
+                        <div class="diagram-box bg-blue-100 border-blue-300">Layer N</div>
+                        <div class="diagram-arrow text-center">
+                            &rarr;
+                            <div class="text-sm font-medium text-blue-600">INT8</div>
+                        </div>
+                        <div class="diagram-box">Layer N+1</div>
+                    </div>
+                    <div class="text-center mt-4 text-gray-500 italic">
+                        `Layer N` 내부에서는 <strong>`INT8 &rarr; INT10 &rarr; INT8`</strong> 의 변환이 일어납니다.
+                    </div>
+                </div>
+            </section>
+            
+            <!-- 섹션 3: 단일 MAC 연산 상세 과정 -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-semibold text-gray-700 border-b-2 border-gray-200 pb-2 mb-4">3. 단일 MAC(Multiply-Accumulate) 연산 상세 과정</h2>
+                <div class="space-y-8">
+                    <!-- Step 1 -->
+                    <div class="step-card">
+                        <h3 class="text-xl font-semibold text-blue-700 mb-3">Step 1: 곱셈 (INT8 × INT8 &rarr; INT16)</h3>
+                        <p class="text-gray-600 mb-4">이전 레이어의 `INT8` 출력값($v_{in}$)과 현재 레이어의 `INT8` 가중치($v_{w}$)를 곱하여 **16-bit**의 중간 결과($v_{16}$)를 생성합니다. 데이터 손실이 없습니다.</p>
+                        <div class="flex flex-col md:flex-row items-center justify-center gap-4 my-4 p-4 bg-gray-50 rounded-lg">
+                            <div class="diagram-box">INT8 <span class="text-gray-400">(입력)</span></div>
+                            <div class="op-symbol">&times;</div>
+                            <div class="diagram-box">INT8 <span class="text-gray-400">(가중치)</span></div>
+                            <div class="diagram-arrow">&darr;</div>
+                            <div class="diagram-box w-full md:w-auto bg-green-100 border-green-300">INT16 <span class="text-gray-500">(중간 결과)</span></div>
+                        </div>
+                        <div>$$ v_{16} = v_{in(int8)} \times v_{w(int8)} $$</div>
+                    </div>
+                    <!-- Step 2 -->
+                    <div class="step-card">
+                        <h3 class="text-xl font-semibold text-blue-700 mb-3">Step 2: 스케일링 (INT16 &rarr; INT10)</h3>
+                        <p class="text-gray-600 mb-4">16-bit 결과를 10-bit 누산기에 담기 위해, 미리 정의된 고정 시프트 값($S$)만큼 비트를 오른쪽으로 이동(Right Shift)시켜 값의 크기를 줄입니다. 이는 $2^S$로 나누는 것과 동일합니다.</p>
+                        <div class="flex flex-col md:flex-row items-center justify-center gap-4 my-4 p-4 bg-gray-50 rounded-lg">
+                             <div class="diagram-box bg-green-100 border-green-300">INT16</div>
+                             <div class="diagram-arrow text-center">&rarr;<div class="text-sm font-medium text-red-600">Shift Right ( &gg; S )</div></div>
+                             <div class="diagram-box bg-yellow-100 border-yellow-300">INT10 <span class="text-gray-500">(스케일링 후)</span></div>
+                        </div>
+                        <div>$$ v_{10,scaled} = v_{16} \gg S $$</div>
+                    </div>
+                    <!-- Step 3 -->
+                    <div class="step-card">
+                        <h3 class="text-xl font-semibold text-blue-700 mb-3">Step 3: 누산 (INT10 + INT10 &rarr; INT10)</h3>
+                        <p class="text-gray-600 mb-4">스케일링된 10-bit 값을 **10-bit 누산기(Accumulator)**에 더합니다. 이 과정은 **포화(Saturation) 연산**을 포함하여, 덧셈 결과가 표현 범위(-512 ~ +511)를 벗어날 경우 최댓값/최솟값으로 고정됩니다.</p>
+                        <div class="flex flex-col md:flex-row items-center justify-center gap-4 my-4 p-4 bg-gray-50 rounded-lg">
+                            <div class="diagram-box bg-yellow-100 border-yellow-300">INT10 <span class="text-gray-400">(기존 누산값)</span></div>
+                            <div class="op-symbol">+</div>
+                            <div class="diagram-box bg-yellow-100 border-yellow-300">INT10 <span class="text-gray-400">(새로운 값)</span></div>
+                            <div class="diagram-arrow">&darr;</div>
+                            <div class="diagram-box w-full md:w-auto bg-purple-100 border-purple-300">INT10 <span class="text-gray-500">(최종 누산기)</span></div>
+                        </div>
+                        <div>$$ \text{Accumulator}_{(t)} = \text{saturate}_{10bit}(\text{Accumulator}_{(t-1)} + v_{10,scaled}) $$</div>
+                    </div>
+                    <!-- Step 4 -->
+                    <div class="step-card">
+                        <h3 class="text-xl font-semibold text-blue-700 mb-3">Step 4: Requantization (INT10 &rarr; INT8)</h3>
+                        <p class="text-gray-600 mb-4">모든 MAC 연산이 끝나면, 누산기에 담긴 최종 10-bit 값($\text{Acc}_{final}$)을 **2-Pass 전략**을 통해 다시 `INT8`로 변환하여 다음 레이어로 전달합니다.</p>
+                         <ol class="list-decimal list-inside text-gray-600 space-y-2 mb-4">
+                            <li><strong>(Pass 1)</strong> 레이어의 모든 출력 값을 가상으로 계산하여 절대 최댓값($a_{max}$)을 찾습니다.</li>
+                            <li><strong>(Pass 2)</strong> $a_{max}$를 이용해 스케일링 팩터($R_q$)를 계산하고, 최종 누산기 값에 곱하여 `INT8` 출력을 생성합니다.</li>
+                        </ol>
+                        <div>$$ R_q = \frac{120.0}{a_{max}} $$</div>
+                        <div>$$ y_{int8} = \text{saturate}_{int8}(\text{round}(\text{Acc}_{final} \times R_q)) $$</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 섹션 4: 통합 시각화 다이어그램 -->
+            <section>
+                 <h2 class="text-2xl font-semibold text-gray-700 border-b-2 border-gray-200 pb-2 mb-4">4. 통합 시각화 다이어그램</h2>
+                 <p class="text-gray-600 leading-relaxed mb-6">
+                    위 4단계의 과정을 하나의 다이어그램으로 통합하면 아래와 같습니다. 이는 단일 레이어의 출력 픽셀 하나가 계산되는 전체 과정을 보여줍니다.
+                </p>
+                <div class="p-6 bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto">
+                    <div class="flex items-center space-x-4">
+                        <div class="flex-shrink-0 text-center">
+                            <div class="diagram-box">INT8 <span class="text-gray-400">(입력)</span></div>
+                            <div class="op-symbol mx-auto mt-2">&times;</div>
+                            <div class="diagram-box mt-2">INT8 <span class="text-gray-400">(가중치)</span></div>
+                        </div>
+                        <div class="diagram-arrow">&rarr;</div>
+                        <div class="flex-shrink-0 text-center">
+                            <div class="diagram-box bg-green-100 border-green-300">INT16</div>
+                        </div>
+                        <div class="diagram-arrow text-center">&rarr;<div class="text-xs text-red-500 font-semibold">Shift</div></div>
+                        <div class="flex-shrink-0 text-center">
+                            <div class="diagram-box bg-yellow-100 border-yellow-300">INT10</div>
+                        </div>
+                        <div class="diagram-arrow text-center">&rarr;<div class="text-xs text-blue-500 font-semibold">Accumulate</div></div>
+                        <div class="flex-shrink-0 text-center">
+                             <div class="diagram-box bg-purple-100 border-purple-300">INT10<div class="text-xs text-gray-400">(Accumulator)</div></div>
+                        </div>
+                        <div class="diagram-arrow text-center">&rarr;<div class="text-xs text-indigo-500 font-semibold">Requantize</div></div>
+                        <div class="flex-shrink-0 text-center">
+                            <div class="diagram-box bg-gray-200 border-gray-400">INT8<div class="text-xs text-gray-500">(최종 출력)</div></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            renderMathInElement(document.body, {
+                delimiters: [
+                    {left: "$$", right: "$$", display: true},
+                    {left: "$", right: "$", display: false},
+                    {left: "\\(", right: "\\)", display: false},
+                    {left: "\\[", right: "\\]", display: true}
+                ]
+            });
+        });
+    </script>
+</body>
+</html>
