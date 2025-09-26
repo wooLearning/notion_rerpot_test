@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>INT8 정수 양자화·재양자화 보고서</title>
+
+<!-- MathJax (LaTeX 수식 렌더링) -->
+<script>
+window.MathJax = { tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]}, svg: {fontCache: 'global'} };
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+<style>
+:root{
+  --fg:#111; --muted:#555; --line:#e6e6e6; --card:#fafafa; --accent:#2563eb; --ok:#10b981;
+}
+*{box-sizing:border-box}
+body{margin:0; font:16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif; color:var(--fg)}
+main{max-width:980px; margin:40px auto; padding:0 20px 80px}
+h1{font-size:28px; margin:0 0 12px}
+h2{font-size:22px; margin:36px 0 12px}
+h3{font-size:18px; margin:22px 0 8px}
+p{margin:10px 0}
+small,.muted{color:var(--muted)}
+hr{border:none; border-top:1px solid var(--line); margin:28px 0}
+.card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px}
+.tag{display:inline-block; font:12px/1.1 ui-monospace,Menlo,Consolas,monospace; padding:2px 6px; border:1px solid var(--line); border-radius:6px; background:#fff; color:#333}
+.def{margin:8px 0; padding:10px 12px; border-left:3px solid var(--accent); background:#fff; border:1px solid var(--line); border-radius:8px}
+.k{font-weight:700}
+.table{width:100%; border-collapse:collapse; font-size:14px}
+.table th,.table td{border:1px solid var(--line); padding:8px 10px; text-align:center}
+.table th{background:#f5f8ff}
+.small{font-size:13px}
+.note{font-size:13px; color:#0b6; margin-top:6px}
+.svgwrap{display:flex; justify-content:center; overflow:auto; border:1px solid var(--line); border-radius:12px; padding:10px; background:#fff}
+.figurecap{font-size:13px; text-align:center; color:#444; margin-top:6px}
+.code{font:13px/1.4 ui-monospace,Menlo,Consolas,monospace; background:#0b1020; color:#e6edf3; padding:12px; border-radius:10px; overflow:auto; border:1px solid #1f2640}
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>정수 양자화 파이프라인 (INT8 → ACC10 → INT8)</h1>
+  <p class="muted">곱셈 후 <span class="tag">고정 시프트 S</span>로 10-bit 누산 도메인에 맞춘 뒤, 2-pass 방식으로 <span class="tag">a<sub>max</sub></span>를 측정하고 <span class="tag">rq = H/a<sub>max</sub></span>를 적용해 출력 INT8을 헤드룸 <span class="tag">H≈120</span>에 맞추는 구조.</p>
+</header>
+
+<section>
+  <h2>용어 사전 (짧게)</h2>
+
+  <div class="def"><span class="k">양자화(Quantization)</span>  
+  연속값(실수) 파라미터/활성을 유한 비트 정수로 표현. 본 구현은 <b>per-tensor 대칭 INT8</b>을 사용:  
+  $s_w=\max|W|/127,\; w_q=\mathrm{round}(W/s_w)$.</div>
+
+  <div class="def"><span class="k">재양자화(Requantization)</span>  
+  누산 정수 $a$를 다시 INT8로 압축하는 과정. 1-pass에서 $a_{\max}$를 재고, 2-pass에서  
+  $y_q=\mathrm{round}(a\cdot \mathrm{rq}),\; \mathrm{rq}=H/a_{\max}$.</div>
+
+  <div class="def"><span class="k">누산 도메인(ACC)</span>  
+  곱 항을 <span class="tag">≫S</span>로 줄인 뒤 <b>10-bit 포화가산</b>으로 더하는 내부 정수 도메인.  
+  스케일: $s_{\mathrm{acc}}=s_x \cdot s_w \cdot 2^{S}$.</div>
+
+  <div class="def"><span class="k">시프트 S</span>  
+  INT16 곱을 10-bit 누산에 안전하게 적재하기 위해 사용하는 <b>레이어별 고정 right-shift</b>.</div>
+
+  <div class="def"><span class="k">헤드룸 H</span>  
+  출력 INT8 범위를 다 쓰되, 포화를 약간 피하기 위한 상한(보통 100~127, 여기선 120).</div>
+
+  <div class="def"><span class="k">바이어스의 ACC 변환</span>  
+  $b_{\mathrm{acc}}=\mathrm{round}\!\big((b_q\cdot s_b)/s_{\mathrm{acc}}\big)$ 를 한번만 더해 누산 시작 오프셋으로 사용.</div>
+</section>
+
+<section>
+  <h2>메인 다이어그램 (비트폭/도메인 흐름)</h2>
+  <div class="svgwrap">
+    <!-- 간단한 SVG 파이프라인 -->
+    <svg width="930" height="190" viewBox="0 0 930 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="INT8→INT16→ACC10→INT8 pipeline">
+      <style>
+        .b{fill:#fff;stroke:#222;stroke-width:1.5}
+        .t{font:12px/1.2 'Noto Sans KR',sans-serif;fill:#111}
+        .h{font-weight:700}
+        .sub{fill:#555;font-size:11px}
+        .arrow{marker-end:url(#m)}
+      </style>
+      <defs>
+        <marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+          <path d="M0,0 L9,3 L0,6 Z" fill="#222"/>
+        </marker>
+      </defs>
+
+      <!-- Boxes -->
+      <rect x="20"  y="40" width="120" height="50" rx="10" class="b"/>
+      <text x="80" y="62" text-anchor="middle" class="t h">INT8 × INT8</text>
+      <text x="80" y="78" text-anchor="middle" class="t sub">x_q , w_q</text>
+
+      <rect x="180" y="40" width="140" height="50" rx="10" class="b"/>
+      <text x="250" y="62" text-anchor="middle" class="t h">INT16 곱 p</text>
+      <text x="250" y="78" text-anchor="middle" class="t sub">p = x_q·w_q</text>
+
+      <rect x="360" y="40" width="100" height="50" rx="10" class="b"/>
+      <text x="410" y="62" text-anchor="middle" class="t h">≫ S</text>
+      <text x="410" y="78" text-anchor="middle" class="t sub">고정 shift</text>
+
+      <rect x="500" y="40" width="120" height="50" rx="10" class="b"/>
+      <text x="560" y="62" text-anchor="middle" class="t h">10-bit clamp</text>
+      <text x="560" y="78" text-anchor="middle" class="t sub">[-512, 511]</text>
+
+      <rect x="660" y="40" width="140" height="50" rx="10" class="b"/>
+      <text x="730" y="62" text-anchor="middle" class="t h">ACC(10b) 누산</text>
+      <text x="730" y="78" text-anchor="middle" class="t sub">sat-add, + b_acc</text>
+
+      <rect x="40"  y="120" width="160" height="50" rx="10" class="b"/>
+      <text x="120" y="142" text-anchor="middle" class="t h">1st: a_max 측정</text>
+      <text x="120" y="158" text-anchor="middle" class="t sub">|a| 최대값</text>
+
+      <rect x="240" y="120" width="160" height="50" rx="10" class="b"/>
+      <text x="320" y="142" text-anchor="middle" class="t h">rq = H / a_max</text>
+      <text x="320" y="158" text-anchor="middle" class="t sub">H ≈ 120</text>
+
+      <rect x="440" y="120" width="200" height="50" rx="10" class="b"/>
+      <text x="540" y="142" text-anchor="middle" class="t h">2nd: y_q = round(a·rq)</text>
+      <text x="540" y="158" text-anchor="middle" class="t sub">INT8 출력</text>
+
+      <!-- Arrows -->
+      <line x1="140" y1="65" x2="180" y2="65" stroke="#222" stroke-width="2" class="arrow"/>
+      <line x1="320" y1="65" x2="360" y2="65" stroke="#222" stroke-width="2" class="arrow"/>
+      <line x1="460" y1="65" x2="500" y2="65" stroke="#222" stroke-width="2" class="arrow"/>
+      <line x1="620" y1="65" x2="660" y2="65" stroke="#222" stroke-width="2" class="arrow"/>
+      <line x1="730" y1="90" x2="120" y2="120" stroke="#222" stroke-width="1.5" class="arrow"/>
+      <line x1="200" y1="145" x2="240" y2="145" stroke="#222" stroke-width="2" class="arrow"/>
+      <line x1="400" y1="145" x2="440" y2="145" stroke="#222" stroke-width="2" class="arrow"/>
+
+      <!-- Notes -->
+      <text x="660" y="26" class="t">스케일: s_acc = s_x·s_w·2^S</text>
+      <text x="660" y="16" class="t">b_acc = round((b_q·s_b)/s_acc)</text>
+    </svg>
+  </div>
+  <div class="figurecap">그림 1. INT8×INT8→INT16→(≫S)→ACC10(포화)→2-pass rq→INT8 출력.</div>
+</section>
+
+<section>
+  <h2>핵심 수식(LaTeX)</h2>
+  <div class="card small">
+    <p><b>도메인:</b> $x_q,w_q,y_q\in\{-128,\dots,127\},\; a\in[-512,511]$</p>
+    <p><b>가중치 스케일:</b> $s_w=\max|W|/127,\;\; s_x:$ 이전 레이어 출력 스케일</p>
+    <p><b>곱·시프트·클램프:</b> $p=x_q w_q,\;\tilde p=p\gg S,\;\hat p=\mathrm{clip}_{[-512,511]}(\tilde p)$</p>
+    <p><b>누산:</b> $a=\sum \hat p + b_{\mathrm{acc}},\quad b_{\mathrm{acc}}=\mathrm{round}\!\big((b_q s_b)/s_{\mathrm{acc}}\big),\; s_b=s_w$</p>
+    <p><b>누산 스케일:</b> $\boxed{s_{\mathrm{acc}}=s_x s_w 2^{S}}$</p>
+    <p><b>2-pass:</b> $a_{\max}=\max|a|,\quad \mathrm{rq}=H/a_{\max}$</p>
+    <p><b>재양자화:</b> $\boxed{y_q=\mathrm{clip}_{[-128,127]}(\mathrm{round}(a\cdot \mathrm{rq}))},\quad \boxed{s_y=s_{\mathrm{acc}}/\mathrm{rq}}$</p>
+  </div>
+</section>
+
+<section>
+  <h2>레이어 흐름(요약)</h2>
+  <div class="card">
+    <p><span class="tag">Conv/FC</span> : INT8×INT8 → (≫S) → ACC10 포화 누산(+b_acc) → <b>1st</b> a_max 측정 → <b>2nd</b> rq 적용 → INT8 출력, 스케일 전파 $s_x \leftarrow s_y$</p>
+    <p><span class="tag">ReLU / MaxPool</span> : INT8 도메인에서 인플레이스 연산(스케일 불변)</p>
+  </div>
+</section>
+
+<section>
+  <h2>숫자 예시(짧게)</h2>
+  <div class="card small">
+    <p>가정: $s_x=\tfrac{1}{127}\approx0.007874$, $\max|W|=0.85\Rightarrow s_w=\tfrac{0.85}{127}\approx0.006693$, $S=4$</p>
+    <p>$s_{\mathrm{acc}}=s_x s_w 2^S \approx 8.455\times 10^{-5}$</p>
+    <p>1st: $a_{\max}=350,\; H=120 \Rightarrow \mathrm{rq}\approx0.342857$</p>
+    <p>2nd: $s_y=s_{\mathrm{acc}}/\mathrm{rq}\approx2.466\times 10^{-4}$, &nbsp; $y_q=\mathrm{round}(a\cdot0.342857)$</p>
+  </div>
+</section>
+
+<section>
+  <h2>표 — 연산량(MACs) & 파라미터(INT8) 용량</h2>
+  <table class="table">
+    <thead>
+      <tr><th>Layer</th><th>Filter</th><th>Input</th><th>Output</th><th>MACs 식</th><th>MACs</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Conv2D_0</td><td>5×5×1→6</td><td>28×28×1</td><td>28×28×6</td><td>28·28·6·5·5·1</td><td><b>117,600</b></td></tr>
+      <tr><td>MaxPool_0</td><td>2×2</td><td>28×28×6</td><td>14×14×6</td><td>—</td><td>—</td></tr>
+      <tr><td>Conv2D_1</td><td>5×5×6→16</td><td>14×14×6</td><td>10×10×16</td><td>10·10·16·5·5·6</td><td><b>240,000</b></td></tr>
+      <tr><td>MaxPool_1</td><td>2×2</td><td>10×10×16</td><td>5×5×16</td><td>—</td><td>—</td></tr>
+      <tr><td>Conv2D_2</td><td>5×5×16→120</td><td>5×5×16</td><td>1×1×120</td><td>1·1·120·5·5·16</td><td><b>48,000</b></td></tr>
+      <tr><td>Flatten</td><td>—</td><td>1×1×120</td><td>120</td><td>—</td><td>—</td></tr>
+      <tr><td>Dense_0</td><td>120→84</td><td>120</td><td>84</td><td>120·84</td><td><b>10,080</b></td></tr>
+      <tr><td>Dense_1</td><td>84→10</td><td>84</td><td>10</td><td>84·10</td><td><b>840</b></td></tr>
+      <tr><td colspan="5" style="text-align:right">Total MACs</td><td><b>416,520</b></td></tr>
+    </tbody>
+  </table>
+  <div class="note">1 MAC ≈ 2 FLOPs (곱+더하기 기준). 풀링/활성화 연산은 소량이라 표에서 제외.</div>
+
+  <br/>
+
+  <table class="table">
+    <thead>
+      <tr><th>Layer</th><th>#Weights</th><th>#Bias</th><th>INT8 Size</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Conv2D_0 (5×5×1×6)</td><td>150</td><td>6</td><td>156 B</td></tr>
+      <tr><td>Conv2D_1 (5×5×6×16)</td><td>2,400</td><td>16</td><td>2,416 B</td></tr>
+      <tr><td
