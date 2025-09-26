@@ -1,201 +1,243 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>양자화 연산 흐름 시각화 보고서</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU07EWpWcLsR38TCIXrGP1E32feGcfMzkA5ciKrCF6BfoZrEsGDTe9R" crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzYCACeUdcgtPQJXOXlhsbiaXvoMgpsQGAg" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" xintegrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Noto Sans KR', sans-serif;
-        }
-        .katex-display {
-            margin: 1em 0;
-            font-size: 1.2em;
-        }
-        .diagram-box {
-            border: 2px solid #e5e7eb; /* gray-200 */
-            background-color: #f9fafb; /* gray-50 */
-            padding: 0.75rem 1.5rem;
-            border-radius: 0.5rem;
-            font-weight: 500;
-            text-align: center;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-        }
-        .diagram-arrow {
-            font-size: 2rem;
-            color: #9ca3af; /* gray-400 */
-            align-self: center;
-        }
-        .op-symbol {
-            font-size: 2rem;
-            color: #3b82f6; /* blue-500 */
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 2.5rem;
-            height: 2.5rem;
-            border: 2px solid #d1d5db; /* gray-300 */
-            border-radius: 9999px;
-            background-color: white;
-        }
-        .step-card {
-            background-color: white;
-            border-radius: 0.75rem;
-            border: 1px solid #e5e7eb;
-            padding: 1.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-    </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>INT8 → ACC10 → INT8 | 정수 양자화 파이프라인 보고서</title>
+
+<!-- Tailwind (utility only) -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- MathJax (LaTeX 수식) -->
+<script>
+window.MathJax = { tex:{inlineMath:[['$','$'],['\\(','\\)']]}, svg:{fontCache:'global'} };
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+<style>
+  html,body{font-family:system-ui,-apple-system,"Noto Sans KR",Segoe UI,Roboto,Apple SD Gothic Neo,sans-serif}
+  :root{
+    --bg:#ffffff; --fg:#0f172a; --muted:#64748b;
+    --card:#f8fafc; --line:#e2e8f0; --ink:#0b1324;
+    --blue:#2563eb; --aqua:#06b6d4; --vio:#7c3aed; --ok:#10b981; --warn:#f59e0b;
+  }
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px}
+  .box{background:#fff; border:1.6px solid #cbd5e1; border-radius:12px; padding:.6rem .9rem; min-width:140px; text-align:center}
+  .box .t{font-weight:800; color:var(--fg)}
+  .box .s{font-size:.72rem; color:#475569}
+  .chip{display:inline-block; padding:.18rem .55rem; border-radius:999px; border:1px solid var(--line); background:#fff; font-size:.78rem; color:#334155}
+  .arrow{height:2px; width:56px}
+  .arrow svg{display:block}
+  .note{font-size:.9rem; color:#075985}
+  .katex-display{margin:1rem 0 .6rem}
+  .mono{font-family:ui-monospace,Consolas,Menlo,monospace}
+</style>
 </head>
-<body class="bg-gray-100 py-10 px-4">
-    <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-2xl p-8 md:p-12">
-        <header class="text-center mb-12">
-            <h1 class="text-4xl font-bold text-gray-800">양자화 연산 흐름 시각화 보고서</h1>
-            <p class="text-lg text-gray-500 mt-2">LeNet-5 모델의 단일 레이어 내 데이터 변환 과정 분석</p>
-        </header>
+<body class="bg-white text-slate-900">
+<main class="max-w-6xl mx-auto px-5 md:px-8 py-10">
 
-        <main>
-            <!-- 섹션 1: 개요 -->
-            <section class="mb-12">
-                <h2 class="text-2xl font-semibold text-gray-700 border-b-2 border-gray-200 pb-2 mb-4">1. 개요</h2>
-                <p class="text-gray-600 leading-relaxed">
-                    본 문서는 C++로 구현된 LeNet-5 모델의 단일 연산 레이어(합성곱 또는 완전 연결) 내부에서 일어나는 데이터의 변환 과정을 시각적으로 표현하고 설명합니다. 핵심은 <strong>`INT8`</strong> 데이터를 입력받아, 중간 연산 과정에서 정밀도를 보존하기 위해 <strong>`INT10`</strong> 누산기를 사용한 후, 다시 <strong>`INT8`</strong> 형태로 변환하여 다음 레이어로 전달하는 파이프라인입니다.
-                </p>
-            </section>
+  <!-- HEADER -->
+  <header class="mb-8">
+    <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight">
+      정수 양자화 파이프라인 (INT8 → ACC10 → INT8)
+    </h1>
+    <p class="text-slate-500 mt-2">
+      곱셈 후 <b>고정 시프트 S</b>로 10-bit 누산 도메인에 정렬하고, 1st-pass의 <b>a<sub>max</sub></b>를 바탕으로 2nd-pass에서 <b>rq</b>를 적용해 출력 INT8을 헤드룸 <b>H≈120</b>으로 재양자화.
+    </p>
+  </header>
 
-            <!-- 섹션 2: 전체 데이터 흐름도 -->
-            <section class="mb-12">
-                <h2 class="text-2xl font-semibold text-gray-700 border-b-2 border-gray-200 pb-2 mb-4">2. 전체 데이터 흐름도</h2>
-                <div class="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                    <p class="text-gray-600 leading-relaxed mb-6">
-                        각 연산 레이어는 독립적인 데이터 처리 단위를 형성하며, 모든 레이어는 동일한 입출력 데이터 타입을 갖습니다. 이를 통해 모델 전체에서 일관된 데이터 파이프라인이 유지됩니다.
-                    </p>
-                    <div class="flex items-center justify-center space-x-2 md:space-x-4">
-                        <div class="diagram-box">Layer N-1</div>
-                        <div class="diagram-arrow text-center">
-                            &rarr;
-                            <div class="text-sm font-medium text-blue-600">INT8</div>
-                        </div>
-                        <div class="diagram-box bg-blue-100 border-blue-300">Layer N</div>
-                        <div class="diagram-arrow text-center">
-                            &rarr;
-                            <div class="text-sm font-medium text-blue-600">INT8</div>
-                        </div>
-                        <div class="diagram-box">Layer N+1</div>
-                    </div>
-                    <div class="text-center mt-4 text-gray-500 italic">
-                        `Layer N` 내부에서는 <strong>`INT8 &rarr; INT10 &rarr; INT8`</strong> 의 변환이 일어납니다.
-                    </div>
-                </div>
-            </section>
-            
-            <!-- 섹션 3: 단일 MAC 연산 상세 과정 -->
-            <section class="mb-12">
-                <h2 class="text-2xl font-semibold text-gray-700 border-b-2 border-gray-200 pb-2 mb-4">3. 단일 MAC(Multiply-Accumulate) 연산 상세 과정</h2>
-                <div class="space-y-8">
-                    <!-- Step 1 -->
-                    <div class="step-card">
-                        <h3 class="text-xl font-semibold text-blue-700 mb-3">Step 1: 곱셈 (INT8 × INT8 &rarr; INT16)</h3>
-                        <p class="text-gray-600 mb-4">이전 레이어의 `INT8` 출력값($v_{in}$)과 현재 레이어의 `INT8` 가중치($v_{w}$)를 곱하여 **16-bit**의 중간 결과($v_{16}$)를 생성합니다. 데이터 손실이 없습니다.</p>
-                        <div class="flex flex-col md:flex-row items-center justify-center gap-4 my-4 p-4 bg-gray-50 rounded-lg">
-                            <div class="diagram-box">INT8 <span class="text-gray-400">(입력)</span></div>
-                            <div class="op-symbol">&times;</div>
-                            <div class="diagram-box">INT8 <span class="text-gray-400">(가중치)</span></div>
-                            <div class="diagram-arrow">&darr;</div>
-                            <div class="diagram-box w-full md:w-auto bg-green-100 border-green-300">INT16 <span class="text-gray-500">(중간 결과)</span></div>
-                        </div>
-                        <div>$$ v_{16} = v_{in(int8)} \times v_{w(int8)} $$</div>
-                    </div>
-                    <!-- Step 2 -->
-                    <div class="step-card">
-                        <h3 class="text-xl font-semibold text-blue-700 mb-3">Step 2: 스케일링 (INT16 &rarr; INT10)</h3>
-                        <p class="text-gray-600 mb-4">16-bit 결과를 10-bit 누산기에 담기 위해, 미리 정의된 고정 시프트 값($S$)만큼 비트를 오른쪽으로 이동(Right Shift)시켜 값의 크기를 줄입니다. 이는 $2^S$로 나누는 것과 동일합니다.</p>
-                        <div class="flex flex-col md:flex-row items-center justify-center gap-4 my-4 p-4 bg-gray-50 rounded-lg">
-                             <div class="diagram-box bg-green-100 border-green-300">INT16</div>
-                             <div class="diagram-arrow text-center">&rarr;<div class="text-sm font-medium text-red-600">Shift Right ( &gg; S )</div></div>
-                             <div class="diagram-box bg-yellow-100 border-yellow-300">INT10 <span class="text-gray-500">(스케일링 후)</span></div>
-                        </div>
-                        <div>$$ v_{10,scaled} = v_{16} \gg S $$</div>
-                    </div>
-                    <!-- Step 3 -->
-                    <div class="step-card">
-                        <h3 class="text-xl font-semibold text-blue-700 mb-3">Step 3: 누산 (INT10 + INT10 &rarr; INT10)</h3>
-                        <p class="text-gray-600 mb-4">스케일링된 10-bit 값을 **10-bit 누산기(Accumulator)**에 더합니다. 이 과정은 **포화(Saturation) 연산**을 포함하여, 덧셈 결과가 표현 범위(-512 ~ +511)를 벗어날 경우 최댓값/최솟값으로 고정됩니다.</p>
-                        <div class="flex flex-col md:flex-row items-center justify-center gap-4 my-4 p-4 bg-gray-50 rounded-lg">
-                            <div class="diagram-box bg-yellow-100 border-yellow-300">INT10 <span class="text-gray-400">(기존 누산값)</span></div>
-                            <div class="op-symbol">+</div>
-                            <div class="diagram-box bg-yellow-100 border-yellow-300">INT10 <span class="text-gray-400">(새로운 값)</span></div>
-                            <div class="diagram-arrow">&darr;</div>
-                            <div class="diagram-box w-full md:w-auto bg-purple-100 border-purple-300">INT10 <span class="text-gray-500">(최종 누산기)</span></div>
-                        </div>
-                        <div>$$ \text{Accumulator}_{(t)} = \text{saturate}_{10bit}(\text{Accumulator}_{(t-1)} + v_{10,scaled}) $$</div>
-                    </div>
-                    <!-- Step 4 -->
-                    <div class="step-card">
-                        <h3 class="text-xl font-semibold text-blue-700 mb-3">Step 4: Requantization (INT10 &rarr; INT8)</h3>
-                        <p class="text-gray-600 mb-4">모든 MAC 연산이 끝나면, 누산기에 담긴 최종 10-bit 값($\text{Acc}_{final}$)을 **2-Pass 전략**을 통해 다시 `INT8`로 변환하여 다음 레이어로 전달합니다.</p>
-                         <ol class="list-decimal list-inside text-gray-600 space-y-2 mb-4">
-                            <li><strong>(Pass 1)</strong> 레이어의 모든 출력 값을 가상으로 계산하여 절대 최댓값($a_{max}$)을 찾습니다.</li>
-                            <li><strong>(Pass 2)</strong> $a_{max}$를 이용해 스케일링 팩터($R_q$)를 계산하고, 최종 누산기 값에 곱하여 `INT8` 출력을 생성합니다.</li>
-                        </ol>
-                        <div>$$ R_q = \frac{120.0}{a_{max}} $$</div>
-                        <div>$$ y_{int8} = \text{saturate}_{int8}(\text{round}(\text{Acc}_{final} \times R_q)) $$</div>
-                    </div>
-                </div>
-            </section>
+  <!-- 0. EXEC SUMMARY -->
+  <section class="card p-5 md:p-6 mb-8">
+    <h2 class="text-xl font-bold mb-2">요약</h2>
+    <ul class="list-disc ml-6 text-slate-700 leading-7">
+      <li><b>표현</b>: 활성·가중치·출력은 <span class="chip">INT8</span>, 누산은 <span class="chip">10-bit(포화가산)</span>.</li>
+      <li><b>스케일</b>: 가중치 per-tensor 대칭 양자화 $s_w=\max|W|/127$, 입력 스케일은 이전 레이어 출력 $s_x$.</li>
+      <li><b>연산</b>: $p=x_q\!\cdot\!w_q$ (INT16) → <span class="chip">≫ S</span> → 10-bit clamp → Σ(sat) + <span class="chip">b<sub>acc</sub></span>.</li>
+      <li><b>2-pass</b>: 1st-pass에서 $a_{\max}$ 측정, 2nd-pass에서 $rq=H/a_{\max}$ 적용해 $y_q=\mathrm{round}(a\cdot rq)$.</li>
+      <li><b>스케일 전파</b>: $s_{acc}=s_x s_w 2^S$, $s_y=s_{acc}/rq$ → 다음 레이어의 $s_x$로 전달.</li>
+    </ul>
+  </section>
 
-            <!-- 섹션 4: 통합 시각화 다이어그램 -->
-            <section>
-                 <h2 class="text-2xl font-semibold text-gray-700 border-b-2 border-gray-200 pb-2 mb-4">4. 통합 시각화 다이어그램</h2>
-                 <p class="text-gray-600 leading-relaxed mb-6">
-                    위 4단계의 과정을 하나의 다이어그램으로 통합하면 아래와 같습니다. 이는 단일 레이어의 출력 픽셀 하나가 계산되는 전체 과정을 보여줍니다.
-                </p>
-                <div class="p-6 bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto">
-                    <div class="flex items-center space-x-4">
-                        <div class="flex-shrink-0 text-center">
-                            <div class="diagram-box">INT8 <span class="text-gray-400">(입력)</span></div>
-                            <div class="op-symbol mx-auto mt-2">&times;</div>
-                            <div class="diagram-box mt-2">INT8 <span class="text-gray-400">(가중치)</span></div>
-                        </div>
-                        <div class="diagram-arrow">&rarr;</div>
-                        <div class="flex-shrink-0 text-center">
-                            <div class="diagram-box bg-green-100 border-green-300">INT16</div>
-                        </div>
-                        <div class="diagram-arrow text-center">&rarr;<div class="text-xs text-red-500 font-semibold">Shift</div></div>
-                        <div class="flex-shrink-0 text-center">
-                            <div class="diagram-box bg-yellow-100 border-yellow-300">INT10</div>
-                        </div>
-                        <div class="diagram-arrow text-center">&rarr;<div class="text-xs text-blue-500 font-semibold">Accumulate</div></div>
-                        <div class="flex-shrink-0 text-center">
-                             <div class="diagram-box bg-purple-100 border-purple-300">INT10<div class="text-xs text-gray-400">(Accumulator)</div></div>
-                        </div>
-                        <div class="diagram-arrow text-center">&rarr;<div class="text-xs text-indigo-500 font-semibold">Requantize</div></div>
-                        <div class="flex-shrink-0 text-center">
-                            <div class="diagram-box bg-gray-200 border-gray-400">INT8<div class="text-xs text-gray-500">(최종 출력)</div></div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </main>
+  <!-- 1. GLOSSARY -->
+  <section class="grid md:grid-cols-2 gap-5 mb-8">
+    <article class="card p-5">
+      <h3 class="font-bold text-slate-800">양자화 (Quantization)</h3>
+      <p class="text-slate-600 mt-1">실수 텐서를 정수로 표현. 본 구현은 <b>INT8 대칭 per-tensor</b>:</p>
+      <p class="mt-2">$$ s_w=\frac{\max|W|}{127},\qquad s_x\ \text{(이전 레이어 출력 스케일)} $$</p>
+    </article>
+    <article class="card p-5">
+      <h3 class="font-bold text-slate-800">재양자화 (Requantization)</h3>
+      <p class="text-slate-600 mt-1">누산(ACC10) 결과를 INT8로 다시 스케일. 1st-pass:</p>
+      <p class="mt-1">$$ a_{\max}=\max|a|,\qquad rq=\frac{H}{a_{\max}} \ (H\approx120) $$</p>
+      <p class="mt-1">2nd-pass: $$ y_q=\mathrm{clip}_{[-128,127]}(\mathrm{round}(a\cdot rq)) $$</p>
+    </article>
+    <article class="card p-5">
+      <h3 class="font-bold text-slate-800">누산 도메인 (ACC10)</h3>
+      <p class="text-slate-600 mt-1">INT10 포화 누산 도메인. 스케일:</p>
+      <p class="mt-1">$$ \boxed{s_{acc}=s_x\cdot s_w \cdot 2^S} $$</p>
+      <p class="mt-1">바이어스 정합: $$ b_{acc}=\mathrm{round}\!\Big(\frac{b_q s_b}{s_{acc}}\Big),\quad s_b=s_w$$</p>
+    </article>
+    <article class="card p-5">
+      <h3 class="font-bold text-slate-800">헤드룸 (H)</h3>
+      <p class="text-slate-600 mt-1">출력 INT8이 포화되지 않고 충분한 유효비트를 쓰도록 목표하는 상수(보통 100~127). 본 구현은 <b>120</b>.</p>
+      <p class="mt-1">최종 출력 스케일: $$ \boxed{s_y=\frac{s_{acc}}{rq}} $$</p>
+    </article>
+  </section>
+
+  <!-- 2. MAIN DIAGRAM -->
+  <section class="mb-8">
+    <div class="flex items-baseline justify-between mb-3">
+      <h2 class="text-xl font-bold">메인 다이어그램 — 단일 레이어 내부 데이터 경로</h2>
+      <span class="text-slate-500 text-sm">직선 화살표 / 간결 박스</span>
     </div>
+    <div class="card p-5 overflow-x-auto">
+      <div class="min-w-[980px] flex items-center">
+        <div class="box">
+          <div class="t">INT8 x<sub>q</sub></div><div class="s">입력 활성</div>
+        </div>
+        <div class="arrow mx-2">
+          <svg viewBox="0 0 64 2" xmlns="http://www.w3.org/2000/svg">
+            <line x1="0" y1="1" x2="58" y2="1" stroke="#0f172a" stroke-width="2"/>
+            <polygon points="64,1 58,-3 58,5" fill="#0f172a"/>
+          </svg>
+        </div>
+        <div class="box">
+          <div class="t">INT8 w<sub>q</sub></div><div class="s">가중치</div>
+        </div>
+        <div class="arrow mx-2">
+          <svg viewBox="0 0 64 2" xmlns="http://www.w3.org/2000/svg">
+            <line x1="0" y1="1" x2="58" y2="1" stroke="#0f172a" stroke-width="2"/>
+            <polygon points="64,1 58,-3 58,5" fill="#0f172a"/>
+          </svg>
+        </div>
+        <div class="box">
+          <div class="t">INT16 p</div><div class="s">p = x<sub>q</sub> · w<sub>q</sub></div>
+        </div>
+        <div class="arrow mx-2">
+          <svg viewBox="0 0 64 2" xmlns="http://www.w3.org/2000/svg">
+            <line x1="0" y1="1" x2="58" y2="1" stroke="#0f172a" stroke-width="2"/>
+            <polygon points="64,1 58,-3 58,5" fill="#0f172a"/>
+          </svg>
+        </div>
+        <div class="box">
+          <div class="t">≫ S</div><div class="s">고정 right-shift</div>
+        </div>
+        <div class="arrow mx-2">
+          <svg viewBox="0 0 64 2" xmlns="http://www.w3.org/2000/svg">
+            <line x1="0" y1="1" x2="58" y2="1" stroke="#0f172a" stroke-width="2"/>
+            <polygon points="64,1 58,-3 58,5" fill="#0f172a"/>
+          </svg>
+        </div>
+        <div class="box">
+          <div class="t">10-bit clamp</div><div class="s">[-512, 511]</div>
+        </div>
+        <div class="arrow mx-2">
+          <svg viewBox="0 0 64 2" xmlns="http://www.w3.org/2000/svg">
+            <line x1="0" y1="1" x2="58" y2="1" stroke="#0f172a" stroke-width="2"/>
+            <polygon points="64,1 58,-3 58,5" fill="#0f172a"/>
+          </svg>
+        </div>
+        <div class="box">
+          <div class="t">ACC(10b) Σ</div><div class="s">포화 누산 + b<sub>acc</sub></div>
+        </div>
+        <div class="arrow mx-2">
+          <svg viewBox="0 0 64 2" xmlns="http://www.w3.org/2000/svg">
+            <line x1="0" y1="1" x2="58" y2="1" stroke="#0f172a" stroke-width="2"/>
+            <polygon points="64,1 58,-3 58,5" fill="#0f172a"/>
+          </svg>
+        </div>
+        <div class="box">
+          <div class="t">rq = H / a<sub>max</sub></div><div class="s">1st측정→2nd적용</div>
+        </div>
+        <div class="arrow mx-2">
+          <svg viewBox="0 0 64 2" xmlns="http://www.w3.org/2000/svg">
+            <line x1="0" y1="1" x2="58" y2="1" stroke="#0f172a" stroke-width="2"/>
+            <polygon points="64,1 58,-3 58,5" fill="#0f172a"/>
+          </svg>
+        </div>
+        <div class="box">
+          <div class="t">INT8 y<sub>q</sub></div><div class="s">다음 레이어 입력</div>
+        </div>
+      </div>
+      <div class="mt-4 space-x-2">
+        <span class="chip">s<sub>acc</sub> = s<sub>x</sub> · s<sub>w</sub> · 2<sup>S</sup></span>
+        <span class="chip">s<sub>y</sub> = s<sub>acc</sub> / rq</span>
+      </div>
+    </div>
+  </section>
 
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            renderMathInElement(document.body, {
-                delimiters: [
-                    {left: "$$", right: "$$", display: true},
-                    {left: "$", right: "$", display: false},
-                    {left: "\\(", right: "\\)", display: false},
-                    {left: "\\[", right: "\\]", display: true}
-                ]
-            });
-        });
-    </script>
+  <!-- 3. FORMULATION (분석적으로) -->
+  <section class="grid lg:grid-cols-2 gap-6 mb-10">
+    <article class="card p-5">
+      <h3 class="font-bold text-lg">① 곱셈 → 시프트 → 클램프</h3>
+      <p class="text-slate-600 mt-1">INT8 곱은 INT16로 생성 후, 누산 폭(10-bit)에 안전하게 맞추기 위해 고정 시프트 <span class="chip">S</span>를 적용한다.</p>
+      <p class="mt-2">$$ p=x_q\cdot w_q \in \mathbb{Z}_{16},\quad \tilde p=p\gg S,\quad \hat p=\mathrm{clip}_{[-512,511]}(\tilde p) $$</p>
+      <p class="text-slate-600 mt-1">시프트가 작을수록 포화 위험↑, 크면 유효비트 낭비↑ → 후단의 동적 <b>rq</b>로 보정.</p>
+    </article>
+    <article class="card p-5">
+      <h3 class="font-bold text-lg">② 누산(ACC10)과 바이어스 정합</h3>
+      <p class="text-slate-600 mt-1">바이어스는 가중치 스케일을 공유하므로, 누산 도메인으로 1회 변환해 더한다.</p>
+      <p class="mt-2">$$ a=\sum \hat p + b_{acc},\qquad b_{acc}=\mathrm{round}\!\Big(\frac{b_q s_b}{s_{acc}}\Big),\ s_b=s_w $$</p>
+      <p class="mt-1">누산 스케일: $$ \boxed{s_{acc}=s_x s_w 2^S} $$</p>
+    </article>
+    <article class="card p-5">
+      <h3 class="font-bold text-lg">③ 2-pass 재양자화</h3>
+      <p class="text-slate-600 mt-1">1st-pass에서 $a_{\max}$를 관측해 헤드룸 $H$에 맞춰 스케일을 되살린다.</p>
+      <p class="mt-2">$$ rq=\frac{H}{a_{\max}},\qquad y_q=\mathrm{clip}_{[-128,127]}(\mathrm{round}(a\cdot rq)) $$</p>
+      <p class="mt-1">출력 스케일: $$ \boxed{s_y=\frac{s_{acc}}{rq}} $$</p>
+    </article>
+    <article class="card p-5">
+      <h3 class="font-bold text-lg">④ 스케일 전파 & 안정성</h3>
+      <p class="text-slate-600 mt-1">$s_y$는 다음 레이어의 $s_x$가 된다. 즉, <span class="mono">[스케일 → 누산 → rq → 새 스케일]</span>이 레이어별로 반복된다.</p>
+      <ul class="list-disc ml-6 text-slate-700 mt-2 leading-7">
+        <li><b>S(고정)</b>: 항 크기 제어(누산 안전성).</li>
+        <li><b>rq(동적)</b>: 출력 다이내믹 레인지 복원(정밀도).</li>
+        <li><b>Bias</b>: ACC 도메인 정합으로 오프셋 손실 최소화.</li>
+      </ul>
+    </article>
+  </section>
+
+  <!-- 4. NUMERIC EXAMPLE -->
+  <section class="card p-5 mb-10">
+    <h2 class="text-xl font-bold mb-2">숫자 예시 (단일 레이어)</h2>
+    <p class="text-slate-600">가정: $s_x=\tfrac{1}{127}\approx0.007874$, $\max|W|=0.85\Rightarrow s_w=\tfrac{0.85}{127}\approx0.006693$, $S=4$.</p>
+    <p class="mt-1">누산 스케일: $s_{acc}=s_x s_w 2^S \approx 8.455\times 10^{-5}$.</p>
+    <p class="mt-1">1st-pass: $a_{\max}=350,\ H=120 \Rightarrow rq\approx 0.342857$.</p>
+    <p class="mt-1">출력 스케일: $s_y = s_{acc}/rq \approx 2.466\times 10^{-4}$ → 다음 레이어 입력 스케일.</p>
+  </section>
+
+  <!-- 5. LAYER FLOW (요약 블록) -->
+  <section class="mb-16">
+    <h2 class="text-xl font-bold mb-3">레이어 플로우(요약)</h2>
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div class="card p-4">
+        <div class="font-bold">Conv (k×k, C<sub>in</sub>→C<sub>out</sub>)</div>
+        <div class="text-slate-600 text-sm mt-1">INT8×INT8 → (≫S) → ACC10 → 2-pass rq → INT8</div>
+      </div>
+      <div class="card p-4">
+        <div class="font-bold">ReLU</div>
+        <div class="text-slate-600 text-sm mt-1">INT8 inplace, 스케일 불변</div>
+      </div>
+      <div class="card p-4">
+        <div class="font-bold">MaxPool 2×2</div>
+        <div class="text-slate-600 text-sm mt-1">채널별 최대 선택, 스케일 불변</div>
+      </div>
+      <div class="card p-4">
+        <div class="font-bold">Conv / FC</div>
+        <div class="text-slate-600 text-sm mt-1">동일 스킴(ACC10 + 2-pass rq)</div>
+      </div>
+      <div class="card p-4">
+        <div class="font-bold">FC → Softmax</div>
+        <div class="text-slate-600 text-sm mt-1">마지막 층은 로짓 INT8 → softmax(실수)로 변환</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="text-slate-400 text-sm">
+    <p>본 문서는 구현 코드(LeNet 변형)의 <b>정수 양자화·재양자화 설계</b>를 설명하며, 병렬화·파이프라인 제어는 의도적으로 제외했습니다.</p>
+  </footer>
+
+</main>
 </body>
 </html>
